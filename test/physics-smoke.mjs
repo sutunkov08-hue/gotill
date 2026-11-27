@@ -59,7 +59,7 @@ fs.writeFileSync(path.join(dir, 'game.mjs'),
   `\nexport { players, human, bot, stepPlayer, collideSphere, keys, ANCHOR_GAIN, TRANSFER, TRANSFER_Y, MAX_PUSH, MAX_PUSH_Y, CLIMB_BOOST, UP_DAMP, HAND_R, BODY_R, REACH, GRAV, botLocomotion, updateAI, handLift };\n`);
 
 const elems = {};
-const byId = id => elems[id] ||= { style: {}, innerHTML: '', textContent: '', appendChild() {}, onclick: null };
+const byId = id => elems[id] ||= { style: {}, innerHTML: '', textContent: '', appendChild() {}, onclick: null, classList: { toggle() {} } };
 globalThis.document = { getElementById: byId, addEventListener() {}, pointerLockElement: null, exitPointerLock() {} };
 globalThis.window = globalThis;
 globalThis.innerWidth = 1280; globalThis.innerHeight = 720;

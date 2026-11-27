@@ -8,9 +8,11 @@
   html, body { margin: 0; padding: 0; overflow: hidden; background: #000; width: 100%; height: 100%;
     font-family: "Segoe UI", Arial, sans-serif; user-select: none; }
   #game { position: fixed; inset: 0; }
-  #crosshair { position: fixed; left: 0; top: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px;
-    pointer-events: none; z-index: 5; transition: background .1s; opacity: .9; }
-  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+    pointer-events: none; z-index: 5; opacity: .9; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; border-radius: 2px; }
+  #crosshair.lh::before, #crosshair.lh::after { background: #7dff8a; }
+  #crosshair.rh::before, #crosshair.rh::after { background: #ff8a7a; }
   #crosshair::before { left: 11px; top: 0; width: 4px; height: 26px; border-radius: 2px; }
   #crosshair::after { left: 0; top: 11px; width: 26px; height: 4px; border-radius: 2px; }
   .hud { position: fixed; z-index: 6; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.7); pointer-events: none; }
@@ -39,16 +41,16 @@
 <div id="flash"></div>
 <div id="timer" class="hud">2:00</div>
 <div id="status" class="hud"></div>
-<div id="hint" class="hud">Мышь — руки &nbsp;•&nbsp; Q — только левая &nbsp;•&nbsp; E — только правая &nbsp;•&nbsp; Стрелки — камера</div>
+<div id="hint" class="hud">Мышь — камера &nbsp;•&nbsp; Q (зажать) — левая рука &nbsp;•&nbsp; E (зажать) — правая рука &nbsp;•&nbsp; Отталкивайся руками, ног нет!</div>
 
 <div id="startOverlay" class="overlay">
   <h1>GORILLA RUSH</h1>
   <h2>пародия на Gorilla Tag</h2>
   <div class="rules">
-    <b>Мышь</b> — руки. <b>Q</b> — левая рука, <b>E</b> — правая рука.<br>
-    Отталкивайся руками от пола, <b>ног нет!</b><br>
-    Поставь ладонь и резко отведи мышь — тело полетит в противоположную сторону.<br>
-    Один из горилл заражён. Не дай себе поймать!
+    От первого лица: <b>мышь</b> — камера. <b>Q</b> — левая рука, <b>E</b> — правая рука<br>
+    (пока Q или E зажаты, мышь управляет этой рукой, камера замирает).<br>
+    Отталкивайся руками от пола, <b>ног нет!</b> Поставь ладонь и резко отведи мышь —<br>
+    тело полетит в противоположную сторону. Один из горилл заражён — не дай себя поймать!
   </div>
   <button id="startBtn">ИГРАТЬ</button>
 </div>
@@ -280,10 +282,11 @@ function makeGorilla(furColor, skinColor){
   const pupGeo = new THREE.SphereGeometry(0.028, 6, 5);
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const pupMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  const eyes = [];
   for (const s of [-1, 1]){
     const e = new THREE.Mesh(eyeGeo, eyeMat); e.position.set(0.12*s, 1.5, 0.26);
     const pp = new THREE.Mesh(pupGeo, pupMat); pp.position.set(0.12*s, 1.5, 0.315);
-    group.add(e, pp);
+    group.add(e, pp); eyes.push(e, pp);
   }
   const palmGeo = new THREE.IcosahedronGeometry(HAND_R, 0);
   const handL = new THREE.Mesh(palmGeo, skinMat); handL.castShadow = true;
@@ -293,7 +296,7 @@ function makeGorilla(furColor, skinColor){
   const armR = new THREE.Mesh(armGeo, furMat);
   group.add(body, head, muzzle, handL, handR, armL, armR);
   scene.add(group);
-  return { group, furMat, skinMat, handL, handR, armL, armR, bodyMesh: body, headMesh: head };
+  return { group, furMat, skinMat, handL, handR, armL, armR, bodyMesh: body, head, muzzle, eyes };
 }
 
 const shadowGeo = new THREE.CircleGeometry(0.7, 16);
@@ -306,8 +309,9 @@ function makeBlob(){
 function makeHand(side){
   return {
     side, p: new THREE.Vector3(), v: new THREE.Vector3(),
-    target: new THREE.Vector3(),
-    anchored: false, anchor: new THREE.Vector3(), anchorTime: 0, aiDrag: 0
+    target: new THREE.Vector3(), aim: new THREE.Vector3(),
+    anchored: false, anchor: new THREE.Vector3(), anchorTime: 0, aiDrag: 0,
+    wasActive: false
   };
 }
 function makePlayer(opts){
@@ -332,6 +336,12 @@ const bot   = makePlayer({ fur: 0x8a2f2b, skin: 0xff8866, pos: [0, 1, -12], isBo
 const ai1   = makePlayer({ fur: 0x4a5568, skin: 0xc4b5a0, pos: [-10, 1, 4], isBot: true,  name: 'Мак' });
 const ai2   = makePlayer({ fur: 0x2f6d8a, skin: 0xd0b8a0, pos: [12, 1, -2], isBot: true,  name: 'Коко' });
 
+// вид от первого лица: собственную голову не показываем
+camera.rotation.order = 'YXZ';
+human.vis.head.visible = false;
+human.vis.muzzle.visible = false;
+human.vis.eyes.forEach(e => e.visible = false);
+
 const originalFur = players.map(p => p.vis.furMat.color.getHex());
 function setInfectedLook(pl){
   pl.vis.furMat.emissive = new THREE.Color(0x1fae4a);
@@ -345,61 +355,52 @@ const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault(); });
 addEventListener('keyup',   e => { keys[e.code] = false; });
 
-const vcursor = { x: innerWidth/2, y: innerHeight/2 };
-const crosshair = document.getElementById('crosshair');
-let manualCamTimer = 0;
-
+let mAccX = 0, mAccY = 0;
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement){
-    vcursor.x = Math.max(8, Math.min(innerWidth - 8, vcursor.x + e.movementX));
-    vcursor.y = Math.max(8, Math.min(innerHeight - 8, vcursor.y + e.movementY));
-  }
+  if (document.pointerLockElement){ mAccX += e.movementX; mAccY += e.movementY; }
 });
+const crosshair = document.getElementById('crosshair');
 function updateCrosshair(){
-  crosshair.style.transform = `translate(${vcursor.x}px, ${vcursor.y}px)`;
-  crosshair.style.opacity = (keys.KeyQ || keys.KeyE) ? '0.45' : '0.9';
+  crosshair.classList.toggle('lh', !!keys.KeyQ && !keys.KeyE);
+  crosshair.classList.toggle('rh', !!keys.KeyE && !keys.KeyQ);
 }
 
 /* ============================== КАМЕРА ============================== */
-let camYaw = 0, camPos = new THREE.Vector3(0, 6, 16);
+let camYaw = 0, camPitch = -0.08;
+const CAM_SENS = 0.0023;
 function lerpAngle(a, b, t){
   let d = ((b - a + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI;
   return a + d*t;
 }
-function updateCamera(dt){
-  if (keys.ArrowLeft)  { camYaw += 2.2*dt; manualCamTimer = 2; }
-  if (keys.ArrowRight) { camYaw -= 2.2*dt; manualCamTimer = 2; }
-  manualCamTimer -= dt;
-  const sp = Math.hypot(human.bv.x, human.bv.z);
-  if (manualCamTimer <= 0 && sp > 2.5){
-    const want = Math.atan2(human.bv.x, human.bv.z);
-    camYaw = lerpAngle(camYaw, want + Math.PI, 1 - Math.exp(-2.5*dt));
-  }
-  const dist = 8.5, height = 4.6;
-  const want = new THREE.Vector3(
-    human.bp.x - Math.sin(camYaw)*dist,
-    human.bp.y + height,
-    human.bp.z - Math.cos(camYaw)*dist
-  );
-  want.y = Math.max(want.y, 1.2);
-  camPos.lerp(want, 1 - Math.exp(-6*dt));
-  camera.position.copy(camPos);
-  camera.lookAt(human.bp.x, human.bp.y + 1.1, human.bp.z);
+function updateCamera(){
+  camera.rotation.set(camPitch, camYaw, 0);
+  camera.position.set(human.bp.x, human.bp.y + 1.45, human.bp.z);
+  camera.updateMatrixWorld();
 }
 
 /* ============================== ПРИЦЕЛ ============================== */
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-const aimPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
-function computeAim(){
-  ndc.set((vcursor.x/innerWidth)*2 - 1, -(vcursor.y/innerHeight)*2 + 1);
+const CENTER_NDC = new THREE.Vector2(0, 0);
+const _fwd = new THREE.Vector3();
+function clampAim(hd){
+  hd.aim.y = Math.max(hd.aim.y, 0.1);
+  const off = _v3.copy(hd.aim).sub(human.bp);
+  const L = off.length();
+  if (L > REACH*0.98) hd.aim.copy(human.bp).addScaledVector(off, REACH*0.98/L);
+}
+// при нажатии Q/E прицел руки появляется в центре экрана (на поверхности, если она близко)
+function seedAim(hd){
+  ndc.copy(CENTER_NDC);
   raycaster.setFromCamera(ndc, camera);
-  raycaster.far = 60;
+  raycaster.far = REACH;
   const hits = raycaster.intersectObjects(solidMeshes, false);
-  if (hits.length) return hits[0].point.clone();
-  aimPlane.constant = -human.bp.y;
-  const pt = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(aimPlane, pt) ? pt : human.bp.clone();
+  if (hits.length) hd.aim.copy(hits[0].point);
+  else {
+    camera.getWorldDirection(_fwd);
+    hd.aim.copy(camera.position).addScaledVector(_fwd, 2.0);
+  }
+  clampAim(hd);
 }
 function groundYAt(x, z){
   raycaster.set(new THREE.Vector3(x, 12, z), new THREE.Vector3(0,-1,0));
@@ -488,28 +489,37 @@ function stepPlayer(pl, h){
   if (pl.bp.y < -8){ pl.bp.set(0, 2, 0); pl.bv.set(0, 0, 0); }
 }
 
-function humanControl(dt){
-  const aim = computeAim();
-  const right = _v1.setFromMatrixColumn(camera.matrixWorld, 0); right.y = 0; right.normalize();
-  const leftOnly = keys.KeyQ && !keys.KeyE;
-  const rightOnly = keys.KeyE && !keys.KeyQ;
+const AIM_SENS = 0.0045;
+// Пока Q или E зажаты — мышь двигает соответствующую руку, камера замирает.
+// Без Q/E мышь вращает камеру, руки не двигаются.
+function processInput(){
+  const q = !!keys.KeyQ, e = !!keys.KeyE;
+  const dx = mAccX, dy = mAccY;
+  mAccX = 0; mAccY = 0;
+  if (!(q || e)){
+    camYaw -= dx * CAM_SENS;
+    camPitch = Math.max(-1.25, Math.min(1.25, camPitch - dy * CAM_SENS));
+  }
+  updateCamera();
+  const camRight = _v1.setFromMatrixColumn(camera.matrixWorld, 0);
+  const camUp = _v2.setFromMatrixColumn(camera.matrixWorld, 1);
   for (const hd of human.hands){
-    const active = (leftOnly && hd.side < 0) || (rightOnly && hd.side > 0) || (!leftOnly && !rightOnly);
-    if (!active) continue;
-    const nt = _v2.copy(aim).addScaledVector(right, hd.side*0.35);
-    nt.y = Math.max(nt.y, 0.12);
-    const off = _v3.copy(nt).sub(human.bp);
-    const L = off.length();
-    if (L > REACH*0.98) nt.copy(human.bp).addScaledVector(off, REACH*0.98/L);
-    const delta = nt.sub(hd.target);
-    const dl = delta.length();
-    if (dl > 1.1) delta.multiplyScalar(1.1/dl);
-    if (hd.anchored && !handLift(hd)){
-      human.bv.x -= delta.x * ANCHOR_GAIN;
-      human.bv.z -= delta.z * ANCHOR_GAIN;
-      human.bv.y -= delta.y * ANCHOR_GAIN * (delta.y > 0 ? UP_DAMP : CLIMB_BOOST);
+    const active = (q && hd.side < 0) || (e && hd.side > 0);
+    if (active && !hd.wasActive) seedAim(hd);
+    if (active){
+      hd.aim.addScaledVector(camRight, dx * AIM_SENS).addScaledVector(camUp, -dy * AIM_SENS);
+      clampAim(hd);
+      const delta = _v3.copy(hd.aim).sub(hd.target);
+      const dl = delta.length();
+      if (dl > 1.1) delta.multiplyScalar(1.1/dl);
+      if (hd.anchored && !handLift(hd)){
+        human.bv.x -= delta.x * ANCHOR_GAIN;
+        human.bv.z -= delta.z * ANCHOR_GAIN;
+        human.bv.y -= delta.y * ANCHOR_GAIN * (delta.y > 0 ? UP_DAMP : CLIMB_BOOST);
+      }
+      hd.target.add(delta);
     }
-    hd.target.add(delta);
+    hd.wasActive = active;
   }
 }
 
@@ -704,7 +714,7 @@ function loop(){
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
   if (state === 'run'){
-    humanControl(dt);
+    processInput();
     for (const pl of players) if (pl.isBot) updateAI(pl, dt);
     const h = dt/SUBSTEPS;
     for (let i = 0; i < SUBSTEPS; i++)
@@ -713,7 +723,7 @@ function loop(){
     if (players.every(p => p.infected)) endRound(false);
   }
   for (const pl of players) updateVisual(pl, dt);
-  updateCamera(dt);
+  updateCamera();
   updateHUD(dt);
   renderer.render(scene, camera);
 }
