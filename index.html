@@ -19,6 +19,8 @@
   #timer { top: 12px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 800; letter-spacing: 2px; }
   #status { top: 14px; left: 14px; font-size: 16px; line-height: 1.5; }
   #hint { bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 13px; opacity: .75; white-space: nowrap; }
+  #reach { top: 50%; left: 50%; transform: translate(-50%, 34px); font-size: 16px; font-weight: 700;
+    color: #ffd24a; opacity: 0; transition: opacity .35s; }
   #flash { position: fixed; inset: 0; z-index: 7; pointer-events: none; background: rgba(60,220,90,.35);
     opacity: 0; transition: opacity .2s; }
   .overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center;
@@ -41,7 +43,8 @@
 <div id="flash"></div>
 <div id="timer" class="hud">2:00</div>
 <div id="status" class="hud"></div>
-<div id="hint" class="hud">Мышь — камера &nbsp;•&nbsp; Q (зажать) — левая рука &nbsp;•&nbsp; E (зажать) — правая рука &nbsp;•&nbsp; Отталкивайся руками, ног нет!</div>
+<div id="hint" class="hud">Мышь — камера &nbsp;•&nbsp; Q (зажать) — левая рука &nbsp;•&nbsp; E (зажать) — правая рука &nbsp;•&nbsp; Колесо — размах рук &nbsp;•&nbsp; Ног нет!</div>
+<div id="reach" class="hud"></div>
 
 <div id="startOverlay" class="overlay">
   <h1>GORILLA RUSH</h1>
@@ -49,6 +52,7 @@
   <div class="rules">
     От первого лица: <b>мышь</b> — камера. <b>Q</b> — левая рука, <b>E</b> — правая рука<br>
     (пока Q или E зажаты, мышь управляет этой рукой, камера замирает).<br>
+    <b>Колесо мыши</b> — размах рук (как далеко ладони достают).<br>
     Отталкивайся руками от пола, <b>ног нет!</b> Поставь ладонь и резко отведи мышь —<br>
     тело полетит в противоположную сторону. Один из горилл заражён — не дай себя поймать!
   </div>
@@ -76,12 +80,14 @@ import * as THREE from 'three';
 /* ============================== КОНСТАНТЫ ============================== */
 const GRAV = 20;
 const BODY_R = 0.55, HAND_R = 0.24;
-const REACH = 3.2, RELEASE_DIST = 1.7, LIFT_DIST = 0.35;
-const KS = 130, KD = 9;          // пружина руки к курсору
+let REACH = 3.2;                 // размах рук — регулируется колёсиком мыши
+const REACH_MIN = 1.6, REACH_MAX = 4.8;
+const RELEASE_DIST = 1.7, LIFT_DIST = 0.35;
+const KS = 170, KD = 11;         // пружина руки к курсору (отзывчивая)
 const ARMK = 70, ARMD = 7;       // "резиновая" рука (ограничение длины)
 const ANCHOR_GAIN = 0.6;         // импульс от резкого движения мыши при упоре ладони
-const TRANSFER = 0.05;           // передача горизонтального усилия руки на тело, пока ладонь упёрта
-const TRANSFER_Y = 0.09;         // вертикальная передача (подтягивание/отжатие) — сильнее
+const TRANSFER = 0.038;          // передача горизонтального усилия руки на тело, пока ладонь упёрта
+const TRANSFER_Y = 0.069;        // вертикальная передача (подтягивание/отжатие) — сильнее
 const MAX_PUSH = 14, MAX_PUSH_Y = 24; // пределы ускорения тела от одной руки
 const CLIMB_BOOST = 1.6;         // подтягивание (ладонь тянем вниз/на себя) — усилено
 const UP_DAMP = 0.3;             // тяга ладони вверх почти не прижимает тело вниз
@@ -359,6 +365,18 @@ let mAccX = 0, mAccY = 0;
 addEventListener('mousemove', e => {
   if (document.pointerLockElement){ mAccX += e.movementX; mAccY += e.movementY; }
 });
+// колесо мыши — размах рук
+const reachHud = document.getElementById('reach');
+let reachTimer = 0;
+addEventListener('wheel', e => {
+  if (!document.pointerLockElement || state !== 'run') return;
+  e.preventDefault();
+  REACH = Math.max(REACH_MIN, Math.min(REACH_MAX, REACH + (e.deltaY < 0 ? 0.25 : -0.25)));
+  reachHud.textContent = `Размах рук: ${REACH.toFixed(1)} м`;
+  reachHud.style.opacity = 1;
+  clearTimeout(reachTimer);
+  reachTimer = setTimeout(() => reachHud.style.opacity = 0, 900);
+}, { passive: false });
 const crosshair = document.getElementById('crosshair');
 function updateCrosshair(){
   crosshair.classList.toggle('lh', !!keys.KeyQ && !keys.KeyE);
@@ -381,25 +399,16 @@ function updateCamera(){
 /* ============================== ПРИЦЕЛ ============================== */
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-const CENTER_NDC = new THREE.Vector2(0, 0);
-const _fwd = new THREE.Vector3();
 function clampAim(hd){
   hd.aim.y = Math.max(hd.aim.y, 0.1);
   const off = _v3.copy(hd.aim).sub(human.bp);
   const L = off.length();
   if (L > REACH*0.98) hd.aim.copy(human.bp).addScaledVector(off, REACH*0.98/L);
 }
-// при нажатии Q/E прицел руки появляется в центре экрана (на поверхности, если она близко)
+// при нажатии Q/E рука остаётся там, где была (без рывка к центру экрана),
+// и дальше двигается мышью от этой точки
 function seedAim(hd){
-  ndc.copy(CENTER_NDC);
-  raycaster.setFromCamera(ndc, camera);
-  raycaster.far = REACH;
-  const hits = raycaster.intersectObjects(solidMeshes, false);
-  if (hits.length) hd.aim.copy(hits[0].point);
-  else {
-    camera.getWorldDirection(_fwd);
-    hd.aim.copy(camera.position).addScaledVector(_fwd, 2.0);
-  }
+  hd.aim.copy(hd.target);
   clampAim(hd);
 }
 function groundYAt(x, z){
@@ -494,7 +503,8 @@ const AIM_SENS = 0.0045;
 // Без Q/E мышь вращает камеру, руки не двигаются.
 function processInput(){
   const q = !!keys.KeyQ, e = !!keys.KeyE;
-  const dx = mAccX, dy = mAccY;
+  const dx = Math.max(-150, Math.min(150, mAccX));
+  const dy = Math.max(-150, Math.min(150, mAccY));
   mAccX = 0; mAccY = 0;
   if (!(q || e)){
     camYaw -= dx * CAM_SENS;
