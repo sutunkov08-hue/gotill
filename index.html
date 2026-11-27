@@ -85,10 +85,10 @@ const REACH_MIN = 1.6, REACH_MAX = 4.8;
 const RELEASE_DIST = 1.7, LIFT_DIST = 0.45; // LIFT больше — ладонь «цепляется» за поверхность
 const KS = 170, KD = 11;         // пружина руки к курсору (отзывчивая)
 const ARMK = 90, ARMD = 7;       // "резиновая" рука (ограничение длины)
-const ANCHOR_GAIN = 0.8;         // импульс от резкого движения мыши при упоре ладони
-const TRANSFER = 0.055;          // передача горизонтального усилия руки на тело, пока ладонь упёрта
-const TRANSFER_Y = 0.09;        // вертикальная передача (подтягивание/отжатие) — сильнее
-const MAX_PUSH = 19, MAX_PUSH_Y = 30; // пределы ускорения тела от одной руки
+const ANCHOR_GAIN = 1.1;         // импульс от резкого движения мыши при упоре ладони
+const TRANSFER = 0.09;          // передача горизонтального усилия руки на тело, пока ладонь упёрта
+const TRANSFER_Y = 0.13;        // вертикальная передача (подтягивание/отжатие) — сильнее
+const MAX_PUSH = 26, MAX_PUSH_Y = 38; // пределы ускорения тела от одной руки
 const CLIMB_BOOST = 1.6;         // подтягивание (ладонь тянем вниз/на себя) — усилено
 const UP_DAMP = 0.3;             // тяга ладони вверх почти не прижимает тело вниз
 const SUBSTEPS = 3;
@@ -280,52 +280,56 @@ function makeGorilla(furColor, skinColor){
   const furMat  = new THREE.MeshStandardMaterial({ color: furColor,  flatShading: true, roughness: 0.95 });
   const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, flatShading: true, roughness: 0.85 });
   const palmMat = new THREE.MeshStandardMaterial({ color: 0x15151a,  flatShading: true, roughness: 0.9 });
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.58, 1), furMat);
-  body.scale.set(1, 1.15, 0.85); body.position.y = 0.6; body.castShadow = true;
-  const chest = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 1), skinMat);
-  chest.scale.set(0.72, 0.95, 0.55); chest.position.set(0, -0.02, 0.34);
+  const darkMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  // массивное тело с широкой грудью
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6, 1), furMat);
+  body.scale.set(0.95, 1.1, 0.8); body.position.y = 0.62; body.castShadow = true;
+  const chest = new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 1), skinMat);
+  chest.scale.set(0.85, 1.0, 0.5); chest.position.set(0, 0, 0.36);
   body.add(chest);
-  try { // надпись на груди, как на референсе (в headless-тестах canvas недоступен)
+  try { // серая грудка с надписью, как на референсе (в headless-тестах canvas недоступен)
     const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
     const cx = cv.getContext('2d');
-    cx.fillStyle = '#2c2c33'; cx.fillRect(0, 0, 256, 64);
-    cx.fillStyle = '#eceff2'; cx.font = 'bold 42px Arial, sans-serif';
+    cx.fillStyle = '#5a5a62'; cx.fillRect(0, 0, 256, 64);
+    cx.fillStyle = '#f2f3f5'; cx.font = 'bold 40px Arial, sans-serif';
     cx.textAlign = 'center'; cx.textBaseline = 'middle';
     cx.fillText('GORILLA', 128, 34);
     const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.44, 0.11),
+      new THREE.PlaneGeometry(0.4, 0.1),
       new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv) })
     );
-    label.position.set(0, 0.05, 0.53);
+    label.position.set(0, 0.02, 0.55);
     body.add(label);
   } catch (err) {}
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 1), furMat);
-  head.position.set(0, 1.56, 0.08); head.castShadow = true;
-  const muzzle = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 1), skinMat);
-  muzzle.scale.set(1.05, 0.8, 1.25); muzzle.position.set(0, -0.12, 0.3);
-  const brow = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), furMat);
-  brow.scale.set(1.5, 0.45, 0.7); brow.position.set(0, 0.14, 0.22);
+  // крупная круглая голова, вытянутая вперёд, без шеи и без заметных ушей
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 1), furMat);
+  head.scale.set(0.95, 0.95, 1.05); head.position.set(0, 1.6, 0.1); head.castShadow = true;
+  const muzzle = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), skinMat);
+  muzzle.scale.set(1, 0.85, 1.2); muzzle.position.set(0, -0.1, 0.28);
+  const brow = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18, 1), furMat);
+  brow.scale.set(1.45, 0.45, 0.7); brow.position.set(0, 0.16, 0.22);
   head.add(muzzle, brow);
-  const earGeo = new THREE.SphereGeometry(0.075, 6, 5);
-  for (const s of [-1, 1]){ // маленькие прижатые уши
-    const ear = new THREE.Mesh(earGeo, furMat);
-    ear.scale.set(0.55, 1, 1); ear.position.set(0.34*s, 0.03, -0.02);
-    head.add(ear);
+  for (const s of [-1, 1]){ // ноздри
+    const n = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), darkMat);
+    n.position.set(0.05*s, -0.06, 0.5);
+    head.add(n);
   }
-  const eyeGeo = new THREE.SphereGeometry(0.085, 10, 8);
-  const pupGeo = new THREE.SphereGeometry(0.038, 8, 6);
+  // большие глаза, близко друг к другу
+  const eyeGeo = new THREE.SphereGeometry(0.09, 10, 8);
+  const pupGeo = new THREE.SphereGeometry(0.042, 8, 6);
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const pupMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
   const eyes = [];
   for (const s of [-1, 1]){
-    const e = new THREE.Mesh(eyeGeo, eyeMat); e.position.set(0.13*s, 0.05, 0.27);
-    const pp = new THREE.Mesh(pupGeo, pupMat); pp.position.set(0.13*s, 0.05, 0.335);
+    const e = new THREE.Mesh(eyeGeo, eyeMat); e.position.set(0.11*s, 0.08, 0.28);
+    const pp = new THREE.Mesh(pupGeo, pupMat); pp.position.set(0.11*s, 0.08, 0.35);
     head.add(e, pp); eyes.push(e, pp);
   }
-  const palmGeo = new THREE.IcosahedronGeometry(HAND_R*1.12, 0);
+  // длинные толстые руки и крупные чёрные кисти
+  const palmGeo = new THREE.IcosahedronGeometry(HAND_R*1.15, 0);
   const handL = new THREE.Mesh(palmGeo, palmMat); handL.castShadow = true;
   const handR = new THREE.Mesh(palmGeo, palmMat); handR.castShadow = true;
-  const armGeo = new THREE.CylinderGeometry(0.13, 0.1, 1, 6);
+  const armGeo = new THREE.CylinderGeometry(0.14, 0.11, 1, 6);
   const armL = new THREE.Mesh(armGeo, furMat);
   const armR = new THREE.Mesh(armGeo, furMat);
   group.add(body, head, handL, handR, armL, armR);
@@ -404,8 +408,10 @@ function showReachHud(){
 }
 function applyReach(nr){
   REACH = Math.max(REACH_MIN, Math.min(REACH_MAX, nr));
+  const q = !!keys.KeyQ, e = !!keys.KeyE;
   for (const hd of human.hands){
-    if (hd.anchored) continue; // поставленная ладонь остаётся на месте
+    const active = !q && !e ? true : (q && hd.side < 0) || (e && hd.side > 0);
+    if (!active || hd.anchored) continue; // меняем только управляемую руку; поставленная остаётся на месте
     const off = _v3.copy(hd.target).sub(human.bp);
     const L = Math.max(off.length(), 0.3);
     hd.target.copy(human.bp).addScaledVector(off, REACH*0.98/L);
@@ -472,7 +478,7 @@ function anchorHand(pl, hd, contact){
   hd.aiDrag = 0;
   const impact = -contact.vn;
   if (impact > 2){
-    pl.bv.addScaledVector(contact.n, Math.min(impact*0.28, 3.6));
+    pl.bv.addScaledVector(contact.n, Math.min(impact*0.35, 4.6));
     slapSound(impact/12);
   }
 }
@@ -537,7 +543,7 @@ function stepPlayer(pl, h){
   if (pl.bv.length() > 26) pl.bv.setLength(26);
   pl.bp.addScaledVector(pl.bv, h);
   const c = collideSphere(pl.bp, BODY_R, pl.bv, 0.25, 0.04);
-  if (c && c.n.y > 0.6) pl.bv.x *= (1 - 2.2*h), pl.bv.z *= (1 - 2.2*h);
+  if (c && c.n.y > 0.6) pl.bv.x *= (1 - 1.4*h), pl.bv.z *= (1 - 1.4*h);
   if (pl.bp.y < -8){ pl.bp.set(0, 2, 0); pl.bv.set(0, 0, 0); }
 }
 
@@ -649,7 +655,7 @@ function updateVisual(pl, dt){
   const cy = Math.cos(pl.yaw), sy = Math.sin(pl.yaw);
   const toLocal = (wx, wy, wz, out) => {
     const dx = wx - pl.bp.x, dz = wz - pl.bp.z;
-    out.set(cy*dx + sy*dz, wy - pl.bp.y, -sy*dx + cy*dz);
+    out.set(cy*dx - sy*dz, wy - pl.bp.y, sy*dx + cy*dz);
     return out;
   };
   for (const [hd, hand, arm] of [[pl.hands[0], vis.handL, vis.armL], [pl.hands[1], vis.handR, vis.armR]]){
@@ -661,7 +667,7 @@ function updateVisual(pl, dt){
     _mid.copy(_shoulder).add(hd.p).multiplyScalar(0.5);
     toLocal(_mid.x, _mid.y, _mid.z, arm.position);
     arm.scale.set(1, len, 1);
-    _v3.set(cy*dir.x + sy*dir.z, dir.y, -sy*dir.x + cy*dir.z).normalize();
+    _v3.set(cy*dir.x - sy*dir.z, dir.y, sy*dir.x + cy*dir.z).normalize();
     arm.quaternion.setFromUnitVectors(UP, _v3);
   }
   pl.blob.position.set(pl.bp.x, 0.02, pl.bp.z);
