@@ -1,0 +1,13 @@
+{
+  "name": "gorilla-rush",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Браузерная пародия на Gorilla Tag: передвижение отталкиванием руками (Three.js, один index.html)",
+  "type": "module",
+  "scripts": {
+    "test": "node test/physics-smoke.mjs"
+  },
+  "devDependencies": {
+    "three": "0.160.0"
+  }
+}
